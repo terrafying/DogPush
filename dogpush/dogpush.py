@@ -61,7 +61,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # Datadog fields we do not store locally.
 IGNORE_FIELDS = ['created_at', 'created', 'modified', 'creator',
-                 'org_id', 'overall_state', 'id', 'deleted',
+                 'org_id', 'overall_state', 'deleted',
                  'matching_downtimes', 'overall_state_modified',
                  # dogpush specific:
                  'mute_when', 'team', 'severity']
@@ -128,8 +128,9 @@ def _canonical_monitor(original, default_team=None, **kwargs):
             m['message'] += ('\n' if m['message'] else '') + dogpush_line
 
     result = dict(
-        name = m['name'],
         id = original.get('id'),
+        name = m['name'],
+        
         obj = m,
         mute_when = original.get('mute_when'),
         is_silenced = bool(original.get('options', {}).get('silenced'))
@@ -152,7 +153,7 @@ def get_datadog_monitors():
     result = {}
     for m in monitors:
         m = _canonical_monitor(m)
-        result[m['name']] = m
+        result[m['id']] = m
     return result
 
 
@@ -199,7 +200,7 @@ def get_local_monitors():
                     monitors.append(monitor)
     if not _check_monitor_names_unique(monitors):
         raise DogPushException('Duplicate names found in local monitors.')
-    result = dict((m['name'], m) for m in monitors)
+    result = dict((m['id'], m) for m in monitors)
     return result
 
 
@@ -247,8 +248,10 @@ def command_push(args):
     if changed:
         print "Updating %d modified monitors." % len(changed)
         for name in changed:
+            #print local_monitors[name]
+            local_monitors[name]['obj'].pop('id')
             datadog.api.Monitor.update(
-                remote_monitors[name]['id'],
+                name,
                 **_prepare_monitor(local_monitors[name]))
 
     if args.delete_untracked:
@@ -369,7 +372,7 @@ def command_diff(args):
         sys.stdout.write(bcolors.FAIL)
         print "*** FAILED *** Untracked monitors found."
         sys.stdout.write(bcolors.ENDC)
-    if args.exit_status and any((only_local, changed, only_remote and not args.ignore_untracked)):
+    if any((only_local, changed, only_remote and not args.ignore_untracked)):
         sys.exit(1)
 
 
@@ -403,12 +406,6 @@ parser_diff = subparsers.add_parser(
     help='Show diff between local monitors and DataDog')
 parser_diff.add_argument('-i', '--ignore_untracked', action='store_true',
                          help='Ignore untracked monitors.')
-parser_diff.add_argument(
-    '--no_exitstatus',
-    dest='exit_status',
-    action='store_false',
-    default=True,
-    help='Diff will return 0 if there are differences. Default (true), return 1 for differences.')
 parser_diff.set_defaults(command=command_diff)
 
 
